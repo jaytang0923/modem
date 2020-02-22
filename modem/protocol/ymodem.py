@@ -1,8 +1,11 @@
 import glob
 import os
+import time
 from modem.const import *
 from modem.tools import log
 from modem.protocol.xmodem import XMODEM
+from modem import error
+from modem import error as debug
 
 
 class YMODEM(XMODEM):
@@ -47,6 +50,14 @@ class YMODEM(XMODEM):
             # REQUIREMENT 1,1a,1b,1c,1d
             data = ''.join([os.path.basename(filename), '\x00'])
 
+            # append options
+            try:
+                filesize = os.path.getsize(filename)
+                data += str(filesize) + ' '
+            except Exception as err:
+                log.error(err)
+                return False
+
             log.debug(error.DEBUG_START_FILE % (filename,))
             # Pick a suitable packet length for the filename
             packet_size = 128 if (len(data) < 128) else 1024
@@ -55,11 +66,11 @@ class YMODEM(XMODEM):
             data = data.ljust(packet_size, '\0')
 
             # Calculate checksum
-            crc = self.calc_crc(data) if crc_mode else self.calc_checksum(data)
+            crc = self.calc_crc16(data) if crc_mode else self.calc_checksum(data)
 
             # Emit packet
             if not self._send_packet(sequence, data, packet_size, crc_mode,
-                crc, error_count, retry, timeout):
+                                     crc, error_count, retry, timeout):
                 self.abort(timeout=timeout)
                 return False
 
@@ -97,11 +108,11 @@ class YMODEM(XMODEM):
         error_count = 0
         packet_size = 128
         data = '\x00' * packet_size
-        crc = self.calc_crc(data) if crc_mode else self.calc_checksum(data)
+        crc = self.calc_crc16(data) if crc_mode else self.calc_checksum(data)
 
         # Emit packet
         if not self._send_packet(sequence, data, packet_size, crc_mode, crc,
-            error_count, retry, timeout):
+                                 error_count, retry, timeout):
             log.error(error.ABORT_SEND_PACKET)
             # Already aborted
             return False
@@ -167,6 +178,8 @@ class YMODEM(XMODEM):
         fileout = None
         while True:
             # Read next file in batch mode
+            filesize = 0
+            packet_size = 128
             while True:
                 if char is None:
                     error_count += 1
@@ -193,10 +206,16 @@ class YMODEM(XMODEM):
                                 self.putc(ACK)
                                 return num_files
 
-                            log.info('Receiving %s to %s' % (filename,
-                                basedir))
+                            # receive file length [options]
+                            options = data.split('\x00')[1].split(' ')
+                            if len(options[0]) != 0:
+                                filesize = int(options[0])
+
+                            log.info('Receiving %s to %s ,size=%d bytes' % (filename,
+                                                                            basedir, filesize))
+
                             fileout = open(os.path.join(basedir,
-                                os.path.basename(filename)), 'wb')
+                                                        os.path.basename(filename)), 'wb')
 
                             if not fileout:
                                 log.error(error.ABORT_OPEN_FILE)
@@ -220,7 +239,7 @@ class YMODEM(XMODEM):
                 self.getc(1, timeout)
 
             stream_size = self._recv_stream(fileout, crc_mode, retry, timeout,
-                delay)
+                                            delay, filesize)
 
             if not stream_size:
                 log.error(error.ABORT_RECV_STREAM)

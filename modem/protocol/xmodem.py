@@ -331,7 +331,7 @@ class XMODEM(Modem):
                 self.abort(timeout=timeout)
                 return False
 
-    def _recv_stream(self, stream, crc_mode, retry, timeout, delay):
+    def _recv_stream(self, stream, crc_mode, retry, timeout, delay, totalsize=0):
         '''
         Receives data and write it on a stream. It assumes the protocol has
         already been initialized (<CRC> or <NAK> sent and optional packet 0
@@ -339,6 +339,8 @@ class XMODEM(Modem):
 
         On success it exits after an <EOT> and returns the number of bytes
         received. In case of failure returns ``False``.
+
+        totalsize just use for YMODEM and get file length options from packet 0.
         '''
         # IN CASE OF YMODEM THE FILE IS ALREADY OPEN AND THE PACKET 0 RECEIVED
 
@@ -382,8 +384,16 @@ class XMODEM(Modem):
 
                     if data:
                         # Append data to the stream
-                        income_size += len(data)
-                        stream.write(data)
+                        # totalsize just use for YMODEM and get file length options from packet 0.
+                        if totalsize != 0:
+                            income_size += len(data)
+                            if income_size <= totalsize:
+                                stream.write(data)
+                            else:
+                                stream.write(data[:income_size - totalsize])
+                        else:
+                            income_size += len(data)
+                            stream.write(data)
                         self.putc(ACK)
                         sequence = (sequence + 1) % 0x100
 
