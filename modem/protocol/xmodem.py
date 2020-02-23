@@ -390,7 +390,7 @@ class XMODEM(Modem):
                             if income_size <= totalsize:
                                 stream.write(data)
                             else:
-                                stream.write(data[:income_size - totalsize])
+                                stream.write(data[:-(income_size - totalsize)])
                         else:
                             income_size += len(data)
                             stream.write(data)
